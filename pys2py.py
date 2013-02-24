@@ -9,20 +9,60 @@ def usage():
     print '\t\t where SOURCE is the main .py script file that has local dependeces'
 
 
-def write_header(f_src, f_dst):
-    original_header = get_main_script_header(f_src)
-    f = open(f_dst, 'w+')
-    f.write(original_header)
-    f.close()
-    
 
-def write_pys2py_stamp(f_dst):
-    pass
+def is_local(import_lib):
+    return 'local' in import_lib
+
+
+def find_local_imports(line):
+    
+    local_imports = []
+
+    mtch = re.match(r'import (.*)', line)
+    if mtch:
+        imports = mtch.group(1).split(',')
+        for i in imports:
+            if is_local(i):
+                local_imports.append(i)
+        return local_imports
+
+    mtch = re.match(r'from (.*) import.*', line)
+    if mtch:
+        i = mtch.group(1)
+        if is_local(i):
+            local_imports.append(i)
+
+    return local_imports
+
+
+def remove_locals(line, local_imports):
+    if re.match(r'from .*', line):
+        # from A import ... A is the only lib, so
+        # the line must be removed
+        return ''
+
+    # The import is like: import a[, b, c]
+
+    # import local1, local2, local3 -> return ''
+    if len(local_imports) == len(line.split(',')):
+        return ''
+
+    for i in local_imports:
+        line = line.replace(i + ',', '')
+        # If previows replacement is not done this will work :)
+        line = line.replace(i, '')
+
+    if re.match(r'.*\,$', line):
+        print line
+        # Removing the last losed comma (,) at the end but keep newline
+        line = line[:-2] + '\n'
+
+    return line
 
 
 if __name__=='__main__':
 
-    if len(sys.argv) != 3):
+    if len(sys.argv) != 3:
         usage()
 
     src_main_filename = sys.argv[1]
@@ -48,27 +88,28 @@ if __name__=='__main__':
     f_dst.write(' .py libraries using pys2py #########\n')
     f_dst.write('#'*80+ '\n')
 
-    modified_src_filename = '/tmp/' + src_main_filename + str(randint(1**16))
-    f_modified_src = open(modified_src_filename, 'w')
+    pos_to_embed_local_lib = f_dst.tell()
+
+    all_local_imports = []
     # Search all from X import Y or improt X
     while line:
-        local_imports = find_local_imports(line)
-        if local_imports:
-            line_without_local = remove_locals(line)
-            f_modifed_src.write('#' + line)
-            f_modifed_src.write(line_without_local)
+        if re.match(r'from .*', line) or re.match(r'import .*', line):
+            local_imports = find_local_imports(line)
+            if local_imports:
+                all_local_imports.append(local_imports)
+                # Writing original line commented
+                f_dst.write('#' + line)
+                line_without_local = remove_locals(line, local_imports)
+                if line_without_local:
+                    # Writing modified line without local imports
+                    # only if there is something to write
+                    f_dst.write(line_without_local)
+            else:
+                f_dst.write(line)
         else:
-            f_modified_src.write(line)
-            
+            f_dst.write(line)
 
-
-        f_dst.write(mod_line)
         line = f_main_src.readline()
-
-    # Look if is a local .py file
-
-    # Is a local file, putting it inside de dest and commend line
-
 
     f_main_src.close()
     f_dst.close()
